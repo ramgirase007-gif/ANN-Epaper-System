@@ -1,0 +1,24 @@
+{
+  "project": {
+    "name": "ANN Publisher",
+    "newspaper": "Accurate News Network",
+    "language": "Marathi",
+    "edition": "Daily"
+  },
+
+  "paper": {
+    "width_mm": 329,
+    "height_mm": 525,
+    "bleed_mm": 3,
+    "margin_mm": 10,
+    "columns": 6,
+    "gutter_mm": 4
+  },
+
+  "export": {
+    "pdf": true,
+    "jpg": true,
+    "dpi": 300,
+    "color": "CMYK"
+  }
+}

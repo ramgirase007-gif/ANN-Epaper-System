@@ -1,0 +1,27 @@
+{
+  "page_01": {
+    "lead_story": 1,
+    "secondary_story": 5,
+    "brief_news": 5
+  },
+
+  "page_02": {
+    "stories": 10
+  },
+
+  "page_03": {
+    "stories": 8
+  },
+
+  "page_04": {
+    "stories": 12
+  },
+
+  "page_05": {
+    "stories": 8
+  },
+
+  "page_06": {
+    "stories": 8
+  }
+}

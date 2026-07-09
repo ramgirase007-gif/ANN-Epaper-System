@@ -1,0 +1,10 @@
+{
+  "site_name": "Accurate News Network",
+  "site_url": "https://accuratenewsnetwork.in",
+  "api_url": "https://accuratenewsnetwork.in/wp-json/wp/v2",
+  "posts_endpoint": "/posts",
+  "categories_endpoint": "/categories",
+  "media_endpoint": "/media",
+  "timeout": 30,
+  "language": "mr"
+}
