@@ -85,6 +85,24 @@ def main():
     # =====================================================
     articles = assign_pages(articles)
 
+    # =====================================================
+    # Safety Limit (Version 1.0)
+    # =====================================================
+    MAX_ARTICLES = 30
+
+    if len(articles) > MAX_ARTICLES:
+
+        print()
+        print("=" * 60)
+        print("VERSION 1.0 SAFETY")
+        print("=" * 60)
+        print(f"Articles Fetched : {len(articles)}")
+        print(f"Processing Only  : {MAX_ARTICLES}")
+        print("Remaining articles will be skipped.")
+        print("=" * 60)
+
+        articles = articles[:MAX_ARTICLES]
+
     print()
     print("Total Articles :", len(articles))
     print()

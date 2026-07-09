@@ -1,338 +1,83 @@
 """
-============================================================
 ANN Publisher
-Production Layout Engine v1.0
-============================================================
+Production Layout Engine v2.0 (starter)
 """
 
 from dataclasses import dataclass
-from typing import Dict, List, Any
+from typing import Dict, List
 
-
-# ============================================================
-# Slot Definition
-# ============================================================
 
 @dataclass
 class LayoutSlot:
-    page: int
-    frame: str
+    page:int
+    frame:str
+    columns:int
+    width:int
+    height:int
+    priority:int
+    image:bool=False
+    used:bool=False
 
-    columns: int
-
-    width: int
-    height: int
-
-    priority: int
-
-    image: bool = False
-
-    used: bool = False
-
-
-# ============================================================
-# Layout Engine
-# ============================================================
 
 class LayoutEngine:
 
     def __init__(self):
-
-        self.pages: Dict[int, List[dict]] = {}
-
-        self.slots: List[LayoutSlot] = []
-
+        self.pages:Dict[int, List[dict]]={}
+        self.slots:List[LayoutSlot]=[]
         self.build_slots()
 
     def build_slots(self):
-        """
-        Build page slots.
-        """
         self.slots.clear()
-
-        # ----------------------------------------------------
-        # FRONT PAGE
-        # ----------------------------------------------------
-
-        self.slots.extend([
-
-            LayoutSlot(
-                1,
-                "LEAD",
-                4,
-                980,
-                360,
-                100,
-                True
-            ),
-
-            LayoutSlot(
-                1,
-                "SECOND",
-                3,
-                720,
-                260,
-                90,
-                True
-            ),
-
-            LayoutSlot(
-                1,
-                "PHOTO",
-                2,
-                460,
-                240,
-                80,
-                True
-            ),
-
-            LayoutSlot(
-                1,
-                "BRIEF_1",
-                1,
-                230,
-                180,
-                60,
-                False
-            ),
-
-            LayoutSlot(
-                1,
-                "BRIEF_2",
-                1,
-                230,
-                180,
-                60,
-                False
-            ),
-
-            LayoutSlot(
-                1,
-                "BOTTOM",
-                4,
-                980,
-                120,
-                20,
-                False
-            ),
-
-        ])
-        # ----------------------------------------------------
-        # PAGE 2 TO PAGE 6
-        # ----------------------------------------------------
-
-        for page in range(2, 7):
-
+        for page in range(1,7):
             self.slots.extend([
-
-                LayoutSlot(
-                    page,
-                    "LEAD",
-                    3,
-                    720,
-                    280,
-                    90,
-                    True
-                ),
-
-                LayoutSlot(
-                    page,
-                    "PHOTO",
-                    2,
-                    460,
-                    240,
-                    80,
-                    True
-                ),
-
-                LayoutSlot(
-                    page,
-                    "REGULAR_1",
-                    2,
-                    460,
-                    220,
-                    70,
-                    False
-                ),
-
-                LayoutSlot(
-                    page,
-                    "REGULAR_2",
-                    2,
-                    460,
-                    220,
-                    70,
-                    False
-                ),
-
-                LayoutSlot(
-                    page,
-                    "REGULAR_3",
-                    2,
-                    460,
-                    220,
-                    70,
-                    False
-                ),
-
-                LayoutSlot(
-                    page,
-                    "BRIEF_1",
-                    1,
-                    230,
-                    170,
-                    50,
-                    False
-                ),
-
-                LayoutSlot(
-                    page,
-                    "BRIEF_2",
-                    1,
-                    230,
-                    170,
-                    50,
-                    False
-                ),
-
+                LayoutSlot(page,"LEAD",3,720,280,90,True),
+                LayoutSlot(page,"PHOTO",2,460,240,80,True),
+                LayoutSlot(page,"REGULAR_1",2,460,220,70),
+                LayoutSlot(page,"REGULAR_2",2,460,220,70),
+                LayoutSlot(page,"REGULAR_3",2,460,220,70),
+                LayoutSlot(page,"BRIEF_1",1,230,170,50),
+                LayoutSlot(page,"BRIEF_2",1,230,170,50),
             ])
-    # ========================================================
-    # Get Page Slots
-    # ========================================================
 
-    def get_page_slots(self, page):
+    def get_page_slots(self,page):
+        return [s for s in self.slots if s.page==page]
 
-        return [
+    def get_free_slot(self,start_page):
+        for p in range(start_page,7):
+            for s in sorted(self.get_page_slots(p), key=lambda x:x.priority, reverse=True):
+                if not s.used:
+                    return p,s
+        for p in range(1,start_page):
+            for s in sorted(self.get_page_slots(p), key=lambda x:x.priority, reverse=True):
+                if not s.used:
+                    return p,s
+        return None,None
 
-            slot
-
-            for slot in self.slots
-
-            if slot.page == page
-
-        ]
-
-    # ========================================================
-    # Get Free Slot
-    # ========================================================
-
-    def get_free_slot(self, page):
-
-        slots = self.get_page_slots(page)
-
-        for slot in sorted(
-
-            slots,
-
-            key=lambda x: x.priority,
-
-            reverse=True
-
-        ):
-
-            if not slot.used:
-
-                return slot
-
-        return None
-    # ========================================================
-    # Story Height
-    # ========================================================
-
-    def calculate_height(self, article):
-
-        words = len(article.get("content", "").split())
-
-        if words < 150:
-            return 140
-
-        elif words < 350:
-            return 220
-
-        elif words < 700:
-            return 300
-
+    def calculate_height(self,article):
+        words=len(article.get("content","").split())
+        if words<150:return 140
+        if words<350:return 220
+        if words<700:return 300
         return 380
-    # ========================================================
-    # Assign Story
-    # ========================================================
 
-    def assign_story(self, article):
-
-        page = article.get("page", 6)
-
-        slot = self.get_free_slot(page)
-
-        if slot is None:
-            return None
-
-        slot.used = True
-
-        story = {
-
-            "title": article.get("title", ""),
-            "category": article.get("category", ""),
-            "score": article.get("score", 0),
-            "story_type": article.get("story_type", "regular"),
-
-            "page": page,
-
-            "frame": slot.frame,
-
-            "columns": slot.columns,
-
-            "width": slot.width,
-
-            "height": self.calculate_height(article),
-
-            "image": slot.image,
-
-            "priority": slot.priority,
-
-            "slug": article.get("slug", ""),
-
-            "date": article.get("date", ""),
-
-            "content": article.get("content", ""),
-
-            "image_url": article.get("image", "")
-
-        }
-
-        return story
-    # ========================================================
-    # Create Layout
-    # ========================================================
-
-    def create(self, articles):
-
-        self.pages = {}
-
-        # Reset all slots
-        for slot in self.slots:
-            slot.used = False
-
+    def create(self,articles):
+        self.pages={}
+        for s in self.slots:
+            s.used=False
         for article in articles:
-
-            story = self.assign_story(article)
-
-            if story is None:
+            page,slot=self.get_free_slot(article.get("page",6))
+            if slot is None:
                 continue
-
-            page = story["page"]
-
-            if page not in self.pages:
-                self.pages[page] = []
-
-            self.pages[page].append(story)
-
-        return self.pages                                    
-# ============================================================
-# Public Function
-# ============================================================
+            slot.used=True
+            story=dict(article)
+            story["page"]=page
+            story["frame"]=slot.frame
+            story["columns"]=slot.columns
+            story["width"]=slot.width
+            story["height"]=self.calculate_height(article)
+            story["image"]=slot.image
+            self.pages.setdefault(page,[]).append(story)
+        return self.pages
 
 def create_layout(articles):
-
-    engine = LayoutEngine()
-
-    return engine.create(articles)
+    return LayoutEngine().create(articles)
