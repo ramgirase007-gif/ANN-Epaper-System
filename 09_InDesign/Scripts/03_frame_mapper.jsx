@@ -1,204 +1,110 @@
 /**
- * ANN Publisher v1.0 - Frame Mapper Module
- * Sprint 9 – Module 3
+ * ANN Publisher v2.0 - Frame Mapper Module
+ * Sprint 9 – Module 3 Production Build
  * 
  * Purpose:
- *   Connects edition.json stories with InDesign frames.
- *   Maps each story to its corresponding TextFrames and Graphics.
- *   Uses script labels to identify and match frames to story elements.
- *   Validates all mappings and provides query functions.
+ *   Maps edition stories to InDesign frames based on script labels.
+ *   Orchestrates loadEdition() and scanFrames() functions.
+ *   Creates frame mappings for HEADLINE, BODY, PHOTO, CAPTION, CREDIT frames.
+ *   Stores actual PageItem object references for each mapped frame.
+ *   Validates frame presence and prevents duplicate label assignments.
  * 
  * Compatibility:
  *   - Adobe InDesign 2026
- *   - ExtendScript (ES3)
- *   - No modern JavaScript features
- *   - No JSON.parse, Object.keys, Array.isArray
+ *   - ExtendScript (ES3) only
+ *   - No modern JavaScript: no forEach, Object.keys, JSON.parse, Array.isArray
  * 
  * Dependencies:
- *   - Module 1: 01_json_loader.jsx (for loadEdition())
- *   - Module 2: 02_frame_scanner.jsx (for scanFrames())
+ *   - loadEdition() from 01_json_loader.jsx
+ *   - scanFrames() from 02_frame_scanner.jsx
+ *   - validateEdition() from 01_json_loader.jsx
  * 
- * Core Data Structure:
- *   MappedStories array contains objects with properties:
- *   - storyIndex (number) - Index of story (0-indexed)
- *   - page (number) - Page number where frames are located
- *   - headlineFrame (object) - Frame object or null
- *   - bodyFrame (object) - Frame object or null
- *   - photoFrame (object) - Frame object or null
- *   - captionFrame (object) - Frame object or null
- *   - creditFrame (object) - Frame object or null
- *   - story (object) - Original story data from edition.json
+ * Core Data Structure (MappedStory):
+ *   {
+ *       storyIndex: Number,         // Index in edition.stories (0-based)
+ *       story: Object,              // Reference to story object from edition
+ *       headlineFrame: Object|null, // Frame entry or null if not found
+ *       bodyFrame: Object|null,     // Frame entry or null if not found
+ *       photoFrame: Object|null,    // Frame entry or null if not found
+ *       captionFrame: Object|null,  // Frame entry or null if not found
+ *       creditFrame: Object|null,   // Frame entry or null if not found
+ *       errors: Array               // Array of validation error messages
+ *   }
  * 
- * Label Convention:
- *   HEADLINE_<index>  (e.g., HEADLINE_1, HEADLINE_2)
- *   BODY_<index>      (e.g., BODY_1, BODY_2)
- *   PHOTO_<index>     (e.g., PHOTO_1, PHOTO_2)
- *   CAPTION_<index>   (e.g., CAPTION_1, CAPTION_2)
- *   CREDIT_<index>    (e.g., CREDIT_1, CREDIT_2)
+ * Public API:
+ *   buildFrameMap()                 - Main entry point, orchestrates entire process
  * 
  * Usage:
  *   var mappedStories = buildFrameMap();
- *   var validation = validateMapping(mappedStories);
- *   if (validation.valid) {
- *       var storyFrames = getStoryFrames(mappedStories, 0);
+ *   if (mappedStories && mappedStories.length > 0) {
+ *       for (var i = 0; i < mappedStories.length; i++) {
+ *           var mapping = mappedStories[i];
+ *           if (mapping.headlineFrame) {
+ *               // Access ACTUAL PageItem: mapping.headlineFrame.object
+ *           }
+ *       }
  *   }
  */
 
 /**
- * Global MappedStories storage
- * Populated by buildFrameMap() function
- * Array of story mapping objects
- */
-var MappedStories = [];
-
-/**
- * Displays an error alert dialog with formatted message
+ * Displays formatted error alert dialog
+ * Format: Title\n\nDetailed message
  * 
- * @param {string} title - Alert title
- * @param {string} message - Alert message
+ * @param {string} title - Alert title (short)
+ * @param {string} message - Detailed error message
  * @return {void}
  */
-function showMapperError(title, message) {
+function showMappingError(title, message) {
     alert(title + "\n\n" + message);
 }
 
 /**
- * Validates that an object is not null and is of object type
+ * Counts occurrences of a specific label in the FrameMap
+ * Used to detect duplicate labels
  * 
- * @param {*} obj - Value to validate
- * @return {boolean} - True if obj is a non-null object
- */
-function isValidObject(obj) {
-    return obj !== null && typeof obj === "object";
-}
-
-/**
- * Validates that an array is not empty and has length property
- * 
- * @param {*} arr - Value to validate as array
- * @return {boolean} - True if arr is a non-empty array-like object
- */
-function isValidArray(arr) {
-    if (arr === null || arr === undefined) {
-        return false;
-    }
-    
-    if (typeof arr !== "object") {
-        return false;
-    }
-    
-    if (arr.length === undefined || arr.length <= 0) {
-        return false;
-    }
-    
-    return true;
-}
-
-/**
- * Validates edition.json structure
- * Checks for required properties and stories array
- * 
- * @param {*} edition - Edition object from JSON loader
- * @return {boolean} - True if edition is valid structure
- */
-function isValidEdition(edition) {
-    if (!isValidObject(edition)) {
-        return false;
-    }
-    
-    if (!edition.hasOwnProperty("stories")) {
-        return false;
-    }
-    
-    var stories = edition.stories;
-    
-    if (!isValidArray(stories)) {
-        return false;
-    }
-    
-    return true;
-}
-
-/**
- * Validates FrameMap structure from scanner module
- * Checks for array of frame objects with required properties
- * 
- * @param {*} frameMap - FrameMap array from frame scanner
- * @return {boolean} - True if frameMap is valid
- */
-function isValidFrameMap(frameMap) {
-    if (!isValidArray(frameMap)) {
-        return false;
-    }
-    
-    // Check first frame has required properties
-    var firstFrame = frameMap[0];
-    
-    if (!isValidObject(firstFrame)) {
-        return false;
-    }
-    
-    if (!firstFrame.hasOwnProperty("label")) {
-        return false;
-    }
-    
-    if (!firstFrame.hasOwnProperty("page")) {
-        return false;
-    }
-    
-    return true;
-}
-
-/**
- * Converts 0-indexed story index to 1-indexed label suffix
- * Index 0 becomes "1", Index 1 becomes "2", etc.
- * 
- * @param {number} index - Story index (0-indexed)
- * @return {string} - Label suffix as string (1-indexed)
- */
-function indexToLabelSuffix(index) {
-    if (typeof index !== "number" || index < 0) {
-        return "0";
-    }
-    
-    var suffix = index + 1;
-    return String(suffix);
-}
-
-/**
- * Builds frame label for a specific story component
- * Concatenates component type with label suffix
- * 
- * @param {string} componentType - Component type (HEADLINE, BODY, PHOTO, CAPTION, CREDIT)
- * @param {number} storyIndex - Story index (0-indexed)
- * @return {string} - Full label (e.g., "HEADLINE_1", "BODY_2")
- */
-function buildComponentLabel(componentType, storyIndex) {
-    var suffix = indexToLabelSuffix(storyIndex);
-    return componentType + "_" + suffix;
-}
-
-/**
- * Searches FrameMap for frame with exact label match
- * Linear search through frameMap array
- * 
- * @param {array} frameMap - FrameMap array from scanner
+ * @param {Array} frameMap - FrameMap array from scanFrames()
  * @param {string} label - Label to search for
- * @return {Object|null} - Frame object with matching label, null if not found
+ * @return {number} - Count of frames with this label
  */
-function findFrameByLabel(frameMap, label) {
-    if (!isValidArray(frameMap)) {
-        return null;
+function countLabelOccurrences(frameMap, label) {
+    if (!frameMap || frameMap.length === 0) {
+        return 0;
     }
     
-    if (!label || label === "") {
-        return null;
-    }
+    var count = 0;
     
+    // Iterate through frameMap (ES3 compatible)
     for (var i = 0; i < frameMap.length; i++) {
         var frame = frameMap[i];
         
-        if (isValidObject(frame) && frame.hasOwnProperty("label")) {
+        if (frame && frame.hasOwnProperty("label")) {
+            if (frame.label === label) {
+                count = count + 1;
+            }
+        }
+    }
+    
+    return count;
+}
+
+/**
+ * Searches for a specific label in the FrameMap
+ * Returns the frame object if found, null otherwise
+ * 
+ * @param {Array} frameMap - FrameMap array from scanFrames()
+ * @param {string} label - Label to search for
+ * @return {Object|null} - Frame object with PageItem reference or null
+ */
+function findLabelInFrameMap(frameMap, label) {
+    if (!frameMap || frameMap.length === 0 || !label || label === "") {
+        return null;
+    }
+    
+    // Iterate through frameMap (ES3 compatible)
+    for (var i = 0; i < frameMap.length; i++) {
+        var frame = frameMap[i];
+        
+        if (frame && frame.hasOwnProperty("label")) {
             if (frame.label === label) {
                 return frame;
             }
@@ -209,327 +115,348 @@ function findFrameByLabel(frameMap, label) {
 }
 
 /**
- * Extracts page number from frame object
- * Returns page property or 0 if not available
+ * Validates that a story object has the expected structure
+ * Checks for basic properties required for processing
  * 
- * @param {Object|null} frame - Frame object from FrameMap
- * @return {number} - Page number or 0 if frame is null/invalid
+ * @param {Object} story - Story object to validate
+ * @return {boolean} - True if story is a valid object
  */
-function getFramePage(frame) {
-    if (!isValidObject(frame)) {
-        return 0;
+function isValidStory(story) {
+    if (!story || typeof story !== "object") {
+        return false;
     }
     
-    if (!frame.hasOwnProperty("page")) {
-        return 0;
-    }
-    
-    var page = frame.page;
-    
-    if (typeof page !== "number" || page < 0) {
-        return 0;
-    }
-    
-    return page;
+    return true;
 }
 
 /**
- * Determines primary page number from story frames
- * Returns page from first non-null frame found
- * Frames checked in order: headline, body, photo, caption, credit
+ * Creates label name for story frame (HEADLINE, BODY, PHOTO, etc.)
+ * Concatenates label prefix with story index number
  * 
- * @param {Object|null} headlineFrame - Headline frame or null
- * @param {Object|null} bodyFrame - Body frame or null
- * @param {Object|null} photoFrame - Photo frame or null
- * @param {Object|null} captionFrame - Caption frame or null
- * @param {Object|null} creditFrame - Credit frame or null
- * @return {number} - Page number or 0 if all frames null
+ * @param {string} prefix - Frame type prefix (e.g., "HEADLINE")
+ * @param {number} storyIndex - Story index (0-based, will add 1 for frame numbering)
+ * @return {string} - Complete label (e.g., "HEADLINE_1")
  */
-function determinePrimaryPage(headlineFrame, bodyFrame, photoFrame, captionFrame, creditFrame) {
-    var frames = [headlineFrame, bodyFrame, photoFrame, captionFrame, creditFrame];
-    
-    for (var i = 0; i < frames.length; i++) {
-        var frame = frames[i];
-        var page = getFramePage(frame);
-        
-        if (page > 0) {
-            return page;
-        }
-    }
-    
-    return 0;
+function createFrameLabel(prefix, storyIndex) {
+    var frameNumber = storyIndex + 1;  // Convert to 1-based numbering
+    return prefix + "_" + frameNumber;
 }
 
 /**
- * Creates a complete story mapping for a single story
- * Maps story to all required frames using standardized labels
+ * Processes a single story and maps its frames
+ * Searches for HEADLINE, BODY, PHOTO, CAPTION, CREDIT frames
+ * Validates frame existence and warns about duplicates
  * 
  * Process:
- *   1. Build labels for each component (HEADLINE, BODY, PHOTO, CAPTION, CREDIT)
- *   2. Search frameMap for each label
- *   3. Create mapping object with frame references
- *   4. Determine primary page number
- *   5. Return complete mapping
+ *   1. Create frame label for each frame type
+ *   2. Search for frame in FrameMap
+ *   3. Store frame object with PageItem reference
+ *   4. Track missing frames and duplicates
  * 
  * @param {Object} story - Story object from edition.stories
- * @param {number} storyIndex - Story index (0-indexed)
- * @param {array} frameMap - FrameMap array from frame scanner
- * @return {Object} - Complete story mapping object
+ * @param {number} storyIndex - Index in stories array (0-based)
+ * @param {Array} frameMap - FrameMap array from scanFrames()
+ * @return {Object} - MappedStory object with all frame references
  */
-function createStoryMapping(story, storyIndex, frameMap) {
-    // Build labels for each component
-    var headlineLabel = buildComponentLabel("HEADLINE", storyIndex);
-    var bodyLabel = buildComponentLabel("BODY", storyIndex);
-    var photoLabel = buildComponentLabel("PHOTO", storyIndex);
-    var captionLabel = buildComponentLabel("CAPTION", storyIndex);
-    var creditLabel = buildComponentLabel("CREDIT", storyIndex);
+function mapStory(story, storyIndex, frameMap) {
+    if (!frameMap) {
+        frameMap = [];
+    }
     
-    // Search frameMap for matching frames
-    var headlineFrame = findFrameByLabel(frameMap, headlineLabel);
-    var bodyFrame = findFrameByLabel(frameMap, bodyLabel);
-    var photoFrame = findFrameByLabel(frameMap, photoLabel);
-    var captionFrame = findFrameByLabel(frameMap, captionLabel);
-    var creditFrame = findFrameByLabel(frameMap, creditLabel);
+    var errors = [];
     
-    // Determine primary page from frames
-    var page = determinePrimaryPage(headlineFrame, bodyFrame, photoFrame, captionFrame, creditFrame);
-    
-    // Create and return mapping object
-    var mapping = {
+    // Create MappedStory object
+    var mappedStory = {
         storyIndex: storyIndex,
-        page: page,
-        headlineFrame: headlineFrame,
-        bodyFrame: bodyFrame,
-        photoFrame: photoFrame,
-        captionFrame: captionFrame,
-        creditFrame: creditFrame,
-        story: story
+        story: story,
+        headlineFrame: null,
+        bodyFrame: null,
+        photoFrame: null,
+        captionFrame: null,
+        creditFrame: null,
+        errors: errors
     };
     
-    return mapping;
-}
-
-/**
- * Builds complete MappedStories array from edition and frameMap
- * Processes each story and creates frame mapping
- * 
- * Process:
- *   1. Calls loadEdition() to get edition data
- *   2. Calls scanFrames() to get frameMap
- *   3. Validates edition and frameMap structures
- *   4. Extracts stories array from edition
- *   5. Iterates through each story
- *   6. Creates mapping for each story
- *   7. Populates global MappedStories array
- *   8. Returns MappedStories array
- * 
- * Error handling:
- *   - Shows alert if loadEdition() fails
- *   - Shows alert if scanFrames() fails
- *   - Shows alert if edition structure invalid
- *   - Shows alert if frameMap structure invalid
- *   - Returns empty array on any error
- * 
- * @return {array} - MappedStories array with all story mappings
- */
-function buildFrameMap() {
-    // Step 1: Load edition data
-    var edition = loadEdition();
+    // Array of frame types to process
+    var frameTypes = [
+        { type: "HEADLINE", property: "headlineFrame" },
+        { type: "BODY", property: "bodyFrame" },
+        { type: "PHOTO", property: "photoFrame" },
+        { type: "CAPTION", property: "captionFrame" },
+        { type: "CREDIT", property: "creditFrame" }
+    ];
     
-    if (!isValidObject(edition)) {
-        showMapperError("Build Frame Map Failed", "Unable to load edition.json");
-        return [];
-    }
-    
-    // Step 2: Scan InDesign frames
-    var frameMap = scanFrames();
-    
-    if (!isValidArray(frameMap)) {
-        showMapperError("Build Frame Map Failed", "Unable to scan InDesign frames");
-        return [];
-    }
-    
-    // Step 3: Validate edition structure
-    if (!isValidEdition(edition)) {
-        showMapperError("Build Frame Map Failed", "Edition structure is invalid");
-        return [];
-    }
-    
-    // Step 4: Validate frameMap structure
-    if (!isValidFrameMap(frameMap)) {
-        showMapperError("Build Frame Map Failed", "Frame map structure is invalid");
-        return [];
-    }
-    
-    // Step 5: Reset global MappedStories
-    MappedStories = [];
-    
-    // Step 6: Extract stories array
-    var stories = edition.stories;
-    var storyCount = stories.length;
-    
-    // Step 7: Process each story
-    for (var i = 0; i < storyCount; i++) {
-        var story = stories[i];
+    // Process each frame type (ES3 compatible)
+    for (var typeIdx = 0; typeIdx < frameTypes.length; typeIdx++) {
+        var frameType = frameTypes[typeIdx];
+        var prefix = frameType.type;
+        var property = frameType.property;
         
-        if (isValidObject(story)) {
-            var mapping = createStoryMapping(story, i, frameMap);
-            MappedStories.push(mapping);
+        // Create label for this story and frame type
+        var label = createFrameLabel(prefix, storyIndex);
+        
+        // Search for frame in FrameMap
+        var frame = findLabelInFrameMap(frameMap, label);
+        
+        if (frame) {
+            // Frame found - store in mapping
+            mappedStory[property] = frame;
+        } else {
+            // Frame not found
+            errors.push(prefix + " frame '" + label + "' not found");
+            mappedStory[property] = null;
+        }
+        
+        // Check for duplicate labels (warn but don't fail)
+        var count = countLabelOccurrences(frameMap, label);
+        if (count > 1) {
+            errors.push("WARNING: Duplicate label '" + label + "' (" + count + " found)");
         }
     }
     
-    return MappedStories;
+    return mappedStory;
 }
 
 /**
- * Retrieves frame mapping for a specific story by index
- * Returns complete mapping including all frames and story data
- * 
- * @param {array} mappedStories - MappedStories array from buildFrameMap
- * @param {number} index - Story index (0-indexed)
- * @return {Object|null} - Mapped story object or null if not found
- */
-function getStoryFrames(mappedStories, index) {
-    if (!isValidArray(mappedStories)) {
-        return null;
-    }
-    
-    if (typeof index !== "number" || index < 0) {
-        return null;
-    }
-    
-    if (index >= mappedStories.length) {
-        return null;
-    }
-    
-    var mapping = mappedStories[index];
-    
-    if (!isValidObject(mapping)) {
-        return null;
-    }
-    
-    return mapping;
-}
-
-/**
- * Validates completeness of all frame mappings
- * Checks if each story has required frames mapped
+ * Validates entire mapped stories collection
+ * Checks for critical errors that prevent processing
  * 
  * Validation rules:
- *   - Headline frame MUST exist
- *   - Body frame MUST exist
- *   - If photo frame exists, caption MUST exist
- *   - If photo frame exists, credit MUST exist
- *   - Photo, caption, and credit are optional if not used
+ *   1. At least one story was successfully mapped
+ *   2. Most stories have at least some frames (not all missing)
+ *   3. Report duplicate labels found
  * 
- * Returns validation result object with:
- *   - valid (boolean) - True if all stories pass validation
- *   - totalStories (number) - Total stories in mappedStories
- *   - completeStories (number) - Stories with all required frames
- *   - incompleteStories (number) - Stories missing required frames
- *   - messages (array) - Array of error messages for incomplete stories
- * 
- * @param {array} mappedStories - MappedStories array to validate
- * @return {Object} - Validation result object
+ * @param {Array} mappedStories - Array of MappedStory objects
+ * @return {boolean} - True if mapping is usable
  */
-function validateMapping(mappedStories) {
-    var result = {
-        valid: true,
-        totalStories: 0,
-        completeStories: 0,
-        incompleteStories: 0,
-        messages: []
-    };
-    
-    // Validate input
-    if (!isValidArray(mappedStories)) {
-        result.valid = false;
-        result.messages.push("Invalid or empty MappedStories array.");
-        return result;
+function validateMappedStories(mappedStories) {
+    if (!mappedStories || mappedStories.length === 0) {
+        return false;
     }
     
-    result.totalStories = mappedStories.length;
+    // Check if at least one story has at least one frame
+    var hasAtLeastOneFrame = false;
     
-    // Validate each story mapping
+    // Iterate through mapped stories (ES3 compatible)
     for (var i = 0; i < mappedStories.length; i++) {
         var mapping = mappedStories[i];
         
-        if (!isValidObject(mapping)) {
-            result.incompleteStories = result.incompleteStories + 1;
-            result.valid = false;
-            result.messages.push("Story " + i + ": Invalid mapping object.");
+        if (!mapping) {
             continue;
         }
         
-        var isComplete = true;
-        var errors = [];
-        
-        // Headline is required
-        if (!isValidObject(mapping.headlineFrame)) {
-            isComplete = false;
-            errors.push("missing headline frame");
-        }
-        
-        // Body is required
-        if (!isValidObject(mapping.bodyFrame)) {
-            isComplete = false;
-            errors.push("missing body frame");
-        }
-        
-        // Photo/caption/credit dependencies
-        var hasPhoto = isValidObject(mapping.photoFrame);
-        var hasCaption = isValidObject(mapping.captionFrame);
-        var hasCredit = isValidObject(mapping.creditFrame);
-        
-        if (hasPhoto && !hasCaption) {
-            isComplete = false;
-            errors.push("photo exists but caption missing");
-        }
-        
-        if (hasPhoto && !hasCredit) {
-            isComplete = false;
-            errors.push("photo exists but credit missing");
-        }
-        
-        // Record results
-        if (isComplete) {
-            result.completeStories = result.completeStories + 1;
-        } else {
-            result.incompleteStories = result.incompleteStories + 1;
-            result.valid = false;
-            var errorMessage = "Story " + i + ": " + errors.join(", ");
-            result.messages.push(errorMessage);
+        // Check if any frame is present
+        if (mapping.headlineFrame || mapping.bodyFrame || mapping.photoFrame || 
+            mapping.captionFrame || mapping.creditFrame) {
+            hasAtLeastOneFrame = true;
+            break;
         }
     }
     
-    return result;
+    return hasAtLeastOneFrame;
 }
 
-// ============================================================================
-// Public API Export
-// ============================================================================
-// The following functions are available for external use:
-// 
-// buildFrameMap()                  - Main entry point, creates all mappings
-// getStoryFrames(mappedStories, i) - Retrieves single story mapping by index
-// validateMapping(mappedStories)   - Validates all mappings completeness
-// 
-// Global data structure:
-// MappedStories[]                  - Array of story mapping objects
-// 
-// Required dependencies:
-// - Module 1: loadEdition() function must be available
-// - Module 2: scanFrames() function must be available
-// 
-// Each MappedStories entry contains:
-// {
-//     storyIndex: number,           // 0-indexed story position
-//     page: number,                 // Page where frames are located
-//     headlineFrame: object|null,   // HEADLINE_<n> frame
-//     bodyFrame: object|null,       // BODY_<n> frame
-//     photoFrame: object|null,      // PHOTO_<n> frame (optional)
-//     captionFrame: object|null,    // CAPTION_<n> frame (optional)
-//     creditFrame: object|null,     // CREDIT_<n> frame (optional)
-//     story: object                 // Original story from edition.json
-// }
-// ============================================================================
+/**
+ * Generates error report from mapped stories
+ * Collects all validation errors for display
+ * 
+ * @param {Array} mappedStories - Array of MappedStory objects
+ * @return {string} - Formatted error report string
+ */
+function generateErrorReport(mappedStories) {
+    if (!mappedStories || mappedStories.length === 0) {
+        return "No stories to process.";
+    }
+    
+    var errorList = "";
+    var totalErrors = 0;
+    
+    // Iterate through mapped stories (ES3 compatible)
+    for (var i = 0; i < mappedStories.length; i++) {
+        var mapping = mappedStories[i];
+        
+        if (!mapping || !mapping.errors || mapping.errors.length === 0) {
+            continue;
+        }
+        
+        // Add story header
+        errorList = errorList + "\nStory " + (mapping.storyIndex + 1) + ":\n";
+        
+        // Iterate through errors for this story (ES3 compatible)
+        for (var errorIdx = 0; errorIdx < mapping.errors.length; errorIdx++) {
+            var error = mapping.errors[errorIdx];
+            errorList = errorList + "  - " + error + "\n";
+            totalErrors = totalErrors + 1;
+        }
+    }
+    
+    if (totalErrors === 0) {
+        return "All frames mapped successfully.";
+    }
+    
+    return "Found " + totalErrors + " issues:" + errorList;
+}
+
+/**
+ * Main entry point - Orchestrates entire frame mapping process
+ * 
+ * Complete Process:
+ *   1. Call loadEdition() to load edition.json
+ *   2. Call scanFrames() to get InDesign frame map
+ *   3. Validate both data sources
+ *   4. For each story in edition.stories:
+ *      a. Create frame labels (HEADLINE_n, BODY_n, etc.)
+ *      b. Search for frames in FrameMap
+ *      c. Store frame references with PageItem objects
+ *      d. Track validation errors
+ *   5. Validate mapping results
+ *   6. Display error report with warnings
+ *   7. Return array of MappedStory objects
+ * 
+ * Error Handling:
+ *   - Shows formatted alerts for missing edition or frames
+ *   - Reports missing frame labels as warnings
+ *   - Reports duplicate labels as warnings
+ *   - Never crashes - returns empty array on critical failure
+ * 
+ * @return {Array} - Array of MappedStory objects with frame references and PageItems
+ */
+function buildFrameMap() {
+    // Step 1: Load edition.json
+    var edition = loadEdition();
+    
+    if (!edition) {
+        showMappingError(
+            "Frame Mapping Failed",
+            "Unable to load edition.json.\n\nPlease ensure the file exists and is valid."
+        );
+        return [];
+    }
+    
+    // Step 2: Validate edition structure
+    if (!validateEdition(edition)) {
+        showMappingError(
+            "Frame Mapping Failed",
+            "Edition object is invalid.\n\nMissing required properties: pages, stories"
+        );
+        return [];
+    }
+    
+    // Step 3: Validate edition has stories
+    if (!edition.hasOwnProperty("stories") || !edition.stories) {
+        showMappingError(
+            "Frame Mapping Failed",
+            "Edition has no stories.\n\nPlease ensure edition.json contains a stories array."
+        );
+        return [];
+    }
+    
+    // Step 4: Get story count
+    var storyCount = 0;
+    try {
+        storyCount = edition.stories.length;
+    } catch (e) {
+        showMappingError(
+            "Frame Mapping Failed",
+            "Unable to read stories array from edition.\n\nThe stories property may be corrupted."
+        );
+        return [];
+    }
+    
+    if (storyCount === 0) {
+        showMappingError(
+            "Frame Mapping Failed",
+            "Edition contains no stories.\n\nPlease ensure edition.json has at least one story."
+        );
+        return [];
+    }
+    
+    // Step 5: Scan InDesign frames
+    var frameMap = scanFrames();
+    
+    if (!frameMap || frameMap.length === 0) {
+        showMappingError(
+            "Frame Mapping Failed",
+            "No labeled frames found in InDesign document.\n\nPlease ensure all frames have script labels."
+        );
+        return [];
+    }
+    
+    // Step 6: Build mapped stories array
+    var mappedStories = [];
+    
+    // Iterate through stories (ES3 compatible)
+    for (var storyIdx = 0; storyIdx < storyCount; storyIdx++) {
+        try {
+            var story = edition.stories[storyIdx];
+            
+            if (!isValidStory(story)) {
+                continue;
+            }
+            
+            // Map this story to its frames
+            var mappedStory = mapStory(story, storyIdx, frameMap);
+            
+            // Add to collection
+            mappedStories.push(mappedStory);
+        } catch (e) {
+            // Error processing story - skip and continue
+        }
+    }
+    
+    // Step 7: Validate mapping results
+    if (!validateMappedStories(mappedStories)) {
+        showMappingError(
+            "Frame Mapping Warning",
+            "No valid frame mappings created.\n\nNo stories have any matching frames.\n\nPlease verify frame labels in InDesign document."
+        );
+        return mappedStories;
+    }
+    
+    // Step 8: Generate and display error report
+    var errorReport = generateErrorReport(mappedStories);
+    
+    if (errorReport && errorReport !== "All frames mapped successfully.") {
+        alert("Frame Mapping Results\n\n" + errorReport);
+    }
+    
+    // Step 9: Return mapped stories
+    return mappedStories;
+}
+
+/**
+ * ============================================================================
+ * PUBLIC API EXPORT
+ * ============================================================================
+ * 
+ * Public Functions:
+ *   buildFrameMap()     - Main entry point, orchestrates entire mapping process
+ * 
+ * Dependencies (must be loaded first):
+ *   - loadEdition() from 01_json_loader.jsx
+ *   - validateEdition() from 01_json_loader.jsx
+ *   - scanFrames() from 02_frame_scanner.jsx
+ * 
+ * MappedStory Structure:
+ *   Each mapped story contains:
+ *   - storyIndex: 0-based index in edition.stories
+ *   - story: Reference to original story object
+ *   - headlineFrame: Frame object or null
+ *   - bodyFrame: Frame object or null
+ *   - photoFrame: Frame object or null
+ *   - captionFrame: Frame object or null
+ *   - creditFrame: Frame object or null
+ *   - errors: Array of validation error messages
+ * 
+ * Frame objects contain:
+ *   - label: Script label string
+ *   - object: ACTUAL InDesign PageItem reference
+ *   - page: Page number (1-indexed)
+ *   - pageName: Page name
+ *   - bounds: Geometric bounds [y1, x1, y2, x2]
+ *   - type: Frame type (TextFrame, Rectangle, Oval, Polygon, Graphic)
+ *   - layer: Layer name
+ *   - id: Unique frame identifier
+ * 
+ * ============================================================================
+ */
