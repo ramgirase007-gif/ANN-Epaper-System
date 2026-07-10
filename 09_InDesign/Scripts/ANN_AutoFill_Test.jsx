@@ -31,4 +31,247 @@
  * Displays progress alert with formatted message
  * 
  * @param {string} message - Progress message to display
- * @return {void}\n */\nfunction showProgress(message) {\n    alert(message);\n}\n\n/**\n * Displays final report with comprehensive statistics\n * \n * @param {Object} report - Report object containing all statistics\n * @return {void}\n */\nfunction showFinalReport(report) {\n    var reportText = \"\";\n    \n    reportText = reportText + \"===== ANN PUBLISHER INTEGRATION TEST REPORT =====\\n\\n\";\n    \n    reportText = reportText + \"EDITION LOADING\\n\";\n    reportText = reportText + \"Stories Loaded: \" + report.storiesLoaded + \"\\n\\n\";\n    \n    reportText = reportText + \"FRAME SCANNING\\n\";\n    reportText = reportText + \"Frames Found: \" + report.framesFound + \"\\n\\n\";\n    \n    reportText = reportText + \"STORY MAPPING\\n\";\n    reportText = reportText + \"Stories Mapped: \" + report.storiesMapped + \"\\n\\n\";\n    \n    reportText = reportText + \"STORY FILLING\\n\";\n    reportText = reportText + \"Stories Filled: \" + report.storiesFilled + \" / \" + report.totalStories + \"\\n\";\n    reportText = reportText + \"Headlines Filled: \" + report.headlinesFilled + \"\\n\";\n    reportText = reportText + \"Bodies Filled: \" + report.bodiesFilled + \"\\n\";\n    reportText = reportText + \"Captions Filled: \" + report.captionsFilled + \"\\n\";\n    reportText = reportText + \"Credits Filled: \" + report.creditsFilled + \"\\n\\n\";\n    \n    reportText = reportText + \"WARNINGS AND ERRORS\\n\";\n    reportText = reportText + \"Missing Frames: \" + report.missingFramesCount + \"\\n\";\n    reportText = reportText + \"Overset Errors: \" + report.oversetErrorsCount + \"\\n\\n\";\n    \n    reportText = reportText + \"===== END REPORT =====\";\n    \n    alert(reportText);\n}\n\n/**\n * Displays error report with detailed error information\n * \n * @param {string} stepName - Name of step that failed\n * @param {string} errorMessage - Error message\n * @return {void}\n */\nfunction showErrorReport(stepName, errorMessage) {\n    alert(stepName + \" FAILED\\n\\n\" + errorMessage);\n}\n\n/**\n * Formats and displays list of error messages\n * \n * @param {string} title - List title\n * @param {array} messages - Array of error messages\n * @return {string} - Formatted message list\n */\nfunction formatMessageList(title, messages) {\n    var text = title + \"\\n\";\n    \n    if (messages.length === 0) {\n        text = text + \"(None)\\n\";\n        return text;\n    }\n    \n    for (var i = 0; i < messages.length; i++) {\n        var message = messages[i];\n        text = text + (i + 1) + \". \" + message + \"\\n\";\n    }\n    \n    return text;\n}\n\n/**\n * Main integration test orchestrator\n * Executes all four modules in sequence\n * \n * Process:\n *   STEP 1: Load edition.json\n *   STEP 2: Scan frames\n *   STEP 3: Build mappings\n *   STEP 4: Fill stories\n *   FINAL: Display comprehensive report\n * \n * Error handling:\n *   - Validates each step's result\n *   - Displays error details on failure\n *   - Continues to next step when safe\n *   - Returns final statistics\n * \n * @return {void}\n */\nfunction runIntegrationTest() {\n    // Initialize report object\n    var report = {\n        storiesLoaded: 0,\n        framesFound: 0,\n        storiesMapped: 0,\n        totalStories: 0,\n        storiesFilled: 0,\n        headlinesFilled: 0,\n        bodiesFilled: 0,\n        captionsFilled: 0,\n        creditsFilled: 0,\n        missingFramesCount: 0,\n        oversetErrorsCount: 0\n    };\n    \n    var edition = null;\n    var frameMap = null;\n    var mappedStories = null;\n    var fillStats = null;\n    \n    // ========================================================================\n    // STEP 1: Load edition.json\n    // ========================================================================\n    showProgress(\"Loading edition.json...\");\n    \n    try {\n        edition = loadEdition();\n        \n        if (edition === null) {\n            showErrorReport(\"STEP 1: LOAD EDITION\", \"loadEdition() returned null\");\n            return;\n        }\n        \n        if (!edition || typeof edition !== \"object\") {\n            showErrorReport(\"STEP 1: LOAD EDITION\", \"Edition is not a valid object\");\n            return;\n        }\n        \n        // Count stories\n        if (edition.hasOwnProperty(\"stories\")) {\n            var stories = edition.stories;\n            if (stories && stories.length !== undefined) {\n                report.storiesLoaded = stories.length;\n            }\n        }\n    } catch (e) {\n        showErrorReport(\"STEP 1: LOAD EDITION\", \"Exception: \" + e.message);\n        return;\n    }\n    \n    // ========================================================================\n    // STEP 2: Scan frames\n    // ========================================================================\n    showProgress(\"Scanning frames...\");\n    \n    try {\n        frameMap = scanFrames();\n        \n        if (!frameMap || frameMap.length === undefined) {\n            showErrorReport(\"STEP 2: SCAN FRAMES\", \"scanFrames() returned invalid result\");\n            return;\n        }\n        \n        report.framesFound = frameMap.length;\n    } catch (e) {\n        showErrorReport(\"STEP 2: SCAN FRAMES\", \"Exception: \" + e.message);\n        return;\n    }\n    \n    // ========================================================================\n    // STEP 3: Build frame mappings\n    // ========================================================================\n    showProgress(\"Building mappings...\");\n    \n    try {\n        mappedStories = buildFrameMap();\n        \n        if (!mappedStories || mappedStories.length === undefined) {\n            showErrorReport(\"STEP 3: BUILD MAPPINGS\", \"buildFrameMap() returned invalid result\");\n            return;\n        }\n        \n        report.storiesMapped = mappedStories.length;\n        report.totalStories = mappedStories.length;\n    } catch (e) {\n        showErrorReport(\"STEP 3: BUILD MAPPINGS\", \"Exception: \" + e.message);\n        return;\n    }\n    \n    // ========================================================================\n    // STEP 4: Fill stories\n    // ========================================================================\n    showProgress(\"Filling stories...\");\n    \n    try {\n        fillStats = fillStories(mappedStories);\n        \n        if (!fillStats || typeof fillStats !== \"object\") {\n            showErrorReport(\"STEP 4: FILL STORIES\", \"fillStories() returned invalid result\");\n            return;\n        }\n        \n        // Extract statistics\n        report.storiesFilled = fillStats.filledStories;\n        report.headlinesFilled = fillStats.headlinesFilled;\n        report.bodiesFilled = fillStats.bodiesFilled;\n        report.captionsFilled = fillStats.captionsFilled;\n        report.creditsFilled = fillStats.creditsFilled;\n        \n        // Count errors\n        if (fillStats.missingFrames && fillStats.missingFrames.length !== undefined) {\n            report.missingFramesCount = fillStats.missingFrames.length;\n        }\n        \n        if (fillStats.oversetErrors && fillStats.oversetErrors.length !== undefined) {\n            report.oversetErrorsCount = fillStats.oversetErrors.length;\n        }\n    } catch (e) {\n        showErrorReport(\"STEP 4: FILL STORIES\", \"Exception: \" + e.message);\n        return;\n    }\n    \n    // ========================================================================\n    // Display final report\n    // ========================================================================\n    showProgress(\"Completed.\");\n    showFinalReport(report);\n    \n    // ========================================================================\n    // Display detailed error logs if any\n    // ========================================================================\n    if (fillStats && fillStats.missingFrames && fillStats.missingFrames.length > 0) {\n        var missingText = formatMessageList(\"MISSING FRAMES:\", fillStats.missingFrames);\n        alert(missingText);\n    }\n    \n    if (fillStats && fillStats.oversetErrors && fillStats.oversetErrors.length > 0) {\n        var oversetText = formatMessageList(\"OVERSET ERRORS:\", fillStats.oversetErrors);\n        alert(oversetText);\n    }\n}\n\n// ============================================================================\n// Script Entry Point\n// ============================================================================\n// Execute integration test immediately when script is run\n// ============================================================================\nrunIntegrationTest();\n
+ * @return {void}
+ */
+function showProgress(message) {
+    alert(message);
+}
+
+/**
+ * Displays final report with comprehensive statistics
+ * 
+ * @param {Object} report - Report object containing all statistics
+ * @return {void}
+ */
+function showFinalReport(report) {
+    var reportText = "";
+    
+    reportText = reportText + "===== ANN PUBLISHER INTEGRATION TEST REPORT =====\n\n";
+    
+    reportText = reportText + "EDITION LOADING\n";
+    reportText = reportText + "Stories Loaded: " + report.storiesLoaded + "\n\n";
+    
+    reportText = reportText + "FRAME SCANNING\n";
+    reportText = reportText + "Frames Found: " + report.framesFound + "\n\n";
+    
+    reportText = reportText + "STORY MAPPING\n";
+    reportText = reportText + "Stories Mapped: " + report.storiesMapped + "\n\n";
+    
+    reportText = reportText + "STORY FILLING\n";
+    reportText = reportText + "Stories Filled: " + report.storiesFilled + " / " + report.totalStories + "\n";
+    reportText = reportText + "Headlines Filled: " + report.headlinesFilled + "\n";
+    reportText = reportText + "Bodies Filled: " + report.bodiesFilled + "\n";
+    reportText = reportText + "Captions Filled: " + report.captionsFilled + "\n";
+    reportText = reportText + "Credits Filled: " + report.creditsFilled + "\n\n";
+    
+    reportText = reportText + "WARNINGS AND ERRORS\n";
+    reportText = reportText + "Missing Frames: " + report.missingFramesCount + "\n";
+    reportText = reportText + "Overset Errors: " + report.oversetErrorsCount + "\n\n";
+    
+    reportText = reportText + "===== END REPORT =====";
+    
+    alert(reportText);
+}
+
+/**
+ * Displays error report with detailed error information
+ * 
+ * @param {string} stepName - Name of step that failed
+ * @param {string} errorMessage - Error message
+ * @return {void}
+ */
+function showErrorReport(stepName, errorMessage) {
+    alert(stepName + " FAILED\n\n" + errorMessage);
+}
+
+/**
+ * Formats and displays list of error messages
+ * 
+ * @param {string} title - List title
+ * @param {array} messages - Array of error messages
+ * @return {string} - Formatted message list
+ */
+function formatMessageList(title, messages) {
+    var text = title + "\n";
+    
+    if (messages.length === 0) {
+        text = text + "(None)\n";
+        return text;
+    }
+    
+    for (var i = 0; i < messages.length; i++) {
+        var message = messages[i];
+        text = text + (i + 1) + ". " + message + "\n";
+    }
+    
+    return text;
+}
+
+/**
+ * Main integration test orchestrator
+ * Executes all four modules in sequence
+ * 
+ * Process:
+ *   STEP 1: Load edition.json
+ *   STEP 2: Scan frames
+ *   STEP 3: Build mappings
+ *   STEP 4: Fill stories
+ *   FINAL: Display comprehensive report
+ * 
+ * Error handling:
+ *   - Validates each step's result
+ *   - Displays error details on failure
+ *   - Continues to next step when safe
+ *   - Returns final statistics
+ * 
+ * @return {void}
+ */
+function runIntegrationTest() {
+    // Initialize report object
+    var report = {
+        storiesLoaded: 0,
+        framesFound: 0,
+        storiesMapped: 0,
+        totalStories: 0,
+        storiesFilled: 0,
+        headlinesFilled: 0,
+        bodiesFilled: 0,
+        captionsFilled: 0,
+        creditsFilled: 0,
+        missingFramesCount: 0,
+        oversetErrorsCount: 0
+    };
+    
+    var edition = null;
+    var frameMap = null;
+    var mappedStories = null;
+    var fillStats = null;
+    
+    // ========================================================================
+    // STEP 1: Load edition.json
+    // ========================================================================
+    showProgress("Loading edition.json...");
+    
+    try {
+        edition = loadEdition();
+        
+        if (edition === null) {
+            showErrorReport("STEP 1: LOAD EDITION", "loadEdition() returned null");
+            return;
+        }
+        
+        if (!edition || typeof edition !== "object") {
+            showErrorReport("STEP 1: LOAD EDITION", "Edition is not a valid object");
+            return;
+        }
+        
+        // Count stories
+        if (edition.hasOwnProperty("stories")) {
+            var stories = edition.stories;
+            if (stories && stories.length !== undefined) {
+                report.storiesLoaded = stories.length;
+            }
+        }
+    } catch (e) {
+        showErrorReport("STEP 1: LOAD EDITION", "Exception: " + e.message);
+        return;
+    }
+    
+    // ========================================================================
+    // STEP 2: Scan frames
+    // ========================================================================
+    showProgress("Scanning frames...");
+    
+    try {
+        frameMap = scanFrames();
+        
+        if (!frameMap || frameMap.length === undefined) {
+            showErrorReport("STEP 2: SCAN FRAMES", "scanFrames() returned invalid result");
+            return;
+        }
+        
+        report.framesFound = frameMap.length;
+    } catch (e) {
+        showErrorReport("STEP 2: SCAN FRAMES", "Exception: " + e.message);
+        return;
+    }
+    
+    // ========================================================================
+    // STEP 3: Build frame mappings
+    // ========================================================================
+    showProgress("Building mappings...");
+    
+    try {
+        mappedStories = buildFrameMap();
+        
+        if (!mappedStories || mappedStories.length === undefined) {
+            showErrorReport("STEP 3: BUILD MAPPINGS", "buildFrameMap() returned invalid result");
+            return;
+        }
+        
+        report.storiesMapped = mappedStories.length;
+        report.totalStories = mappedStories.length;
+    } catch (e) {
+        showErrorReport("STEP 3: BUILD MAPPINGS", "Exception: " + e.message);
+        return;
+    }
+    
+    // ========================================================================
+    // STEP 4: Fill stories
+    // ========================================================================
+    showProgress("Filling stories...");
+    
+    try {
+        fillStats = fillStories(mappedStories);
+        
+        if (!fillStats || typeof fillStats !== "object") {
+            showErrorReport("STEP 4: FILL STORIES", "fillStories() returned invalid result");
+            return;
+        }
+        
+        // Extract statistics
+        report.storiesFilled = fillStats.filledStories;
+        report.headlinesFilled = fillStats.headlinesFilled;
+        report.bodiesFilled = fillStats.bodiesFilled;
+        report.captionsFilled = fillStats.captionsFilled;
+        report.creditsFilled = fillStats.creditsFilled;
+        
+        // Count errors
+        if (fillStats.missingFrames && fillStats.missingFrames.length !== undefined) {
+            report.missingFramesCount = fillStats.missingFrames.length;
+        }
+        
+        if (fillStats.oversetErrors && fillStats.oversetErrors.length !== undefined) {
+            report.oversetErrorsCount = fillStats.oversetErrors.length;
+        }
+    } catch (e) {
+        showErrorReport("STEP 4: FILL STORIES", "Exception: " + e.message);
+        return;
+    }
+    
+    // ========================================================================
+    // Display final report
+    // ========================================================================
+    showProgress("Completed.");
+    showFinalReport(report);
+    
+    // ========================================================================
+    // Display detailed error logs if any
+    // ========================================================================
+    if (fillStats && fillStats.missingFrames && fillStats.missingFrames.length > 0) {
+        var missingText = formatMessageList("MISSING FRAMES:", fillStats.missingFrames);
+        alert(missingText);
+    }
+    
+    if (fillStats && fillStats.oversetErrors && fillStats.oversetErrors.length > 0) {
+        var oversetText = formatMessageList("OVERSET ERRORS:", fillStats.oversetErrors);
+        alert(oversetText);
+    }
+}
+
+// ============================================================================
+// Script Entry Point
+// ============================================================================
+// Execute integration test immediately when script is run
+// ============================================================================
+runIntegrationTest();
