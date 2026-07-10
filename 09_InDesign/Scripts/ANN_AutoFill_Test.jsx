@@ -27,6 +27,16 @@
  *   Execute this script in Adobe InDesign 2026
  */
 
+// ============================================================================
+// Module Loading
+// ============================================================================
+// Load all required modules using ExtendScript
+// ============================================================================
+$.evalFile(File($.fileName).parent + "/01_json_loader.jsx");
+$.evalFile(File($.fileName).parent + "/02_frame_scanner.jsx");
+$.evalFile(File($.fileName).parent + "/03_frame_mapper.jsx");
+$.evalFile(File($.fileName).parent + "/04_story_filler.jsx");
+
 /**
  * Displays progress alert with formatted message
  * 
