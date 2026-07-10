@@ -1,36 +1,48 @@
 /**
- * ANN Publisher v1.0 - Frame Scanner Module
- * Sprint 9 – Module 2
+ * ANN Publisher v2.0 - Production Frame Scanner Module
+ * Sprint 9 – Module 2 Rebuild
  * 
  * Purpose:
- *   Scans all pages and page items in an active InDesign document.
- *   Detects TextFrame, Rectangle, and Graphic objects.
- *   Reads script labels and builds a comprehensive FrameMap.
+ *   Comprehensive frame scanner for Adobe InDesign 2026.
+ *   Scans all pages and returns ACTUAL InDesign PageItem object references.
+ *   Detects TextFrame, Rectangle, Oval, Polygon, and Graphic objects.
+ *   Reads script labels and builds a FrameMap with complete metadata.
  *   Provides query functions to locate frames by label or prefix.
  * 
  * Compatibility:
  *   - Adobe InDesign 2026
- *   - ExtendScript (ES3)
- *   - No modern JavaScript features
+ *   - ExtendScript (ES3) only
+ *   - No modern JavaScript (no forEach, Object.keys, JSON.parse, etc.)
  * 
- * Core Data Structure:
- *   FrameMap array contains objects with properties:
- *   - label (string) - Script label from page item
- *   - page (number) - Page number (1-indexed)
- *   - bounds (array) - [y1, x1, y2, x2] in points
- *   - type (string) - "TextFrame", "Rectangle", or "Graphic"
- *   - id (number) - Unique identifier for the frame
+ * Core FrameMap Structure:
+ *   Each FrameMap entry contains:
+ *   {
+ *       label: String,              // Script label from page item
+ *       object: PageItem,           // ACTUAL InDesign PageItem reference
+ *       pageIndex: Number,          // Zero-indexed page number
+ *       pageName: String,           // Page name from InDesign
+ *       type: String,               // "TextFrame", "Rectangle", "Oval", "Polygon", "Graphic"
+ *       bounds: Array,              // [y1, x1, y2, x2] in points
+ *       layer: String,              // Layer name where item resides
+ *       id: Number                  // Unique frame identifier
+ *   }
  * 
  * Usage:
  *   var frameMap = scanFrames();
- *   var logoFrame = findFrame("logo");
- *   var headerFrames = findFrames("header_");
+ *   var logoFrame = findFrame("LOGO_1");
+ *   var headlines = findFrames("HEADLINE_");
+ * 
+ * Detection Examples:
+ *   - HEADLINE_1, HEADLINE_2, etc.
+ *   - BODY_1, BODY_2, etc.
+ *   - PHOTO_1, PHOTO_2, etc.
+ *   - CAPTION_1, CAPTION_2, etc.
  */
 
 /**
  * Global FrameMap storage
- * Initialized by scanFrames() function
- * Array of frame objects with label, page, bounds, type, id
+ * Populated by scanFrames() function
+ * Contains array of frame objects with all metadata and object references
  */
 var g_FrameMap = [];
 
@@ -74,66 +86,63 @@ function getActiveDocument() {
 }
 
 /**
- * Converts page item bounds array to string representation
- * Bounds format: [y1, x1, y2, x2] in points
+ * Determines the type of a page item using instanceof checks
+ * CRITICAL: Uses instanceof, NOT constructor.name
  * 
- * @param {array} bounds - Bounds array [y1, x1, y2, x2]
- * @return {string} - Formatted bounds string
- */
-function formatBounds(bounds) {
-    if (!bounds || bounds.length !== 4) {
-        return "[0, 0, 0, 0]";
-    }
-    return "[" + bounds[0] + ", " + bounds[1] + ", " + bounds[2] + ", " + bounds[3] + "]";
-}
-
-/**
- * Determines the type of a page item
- * Detects TextFrame, Rectangle, or Graphic
+ * Supported types:
+ *   - TextFrame (text containers)
+ *   - Rectangle (rectangular shapes)
+ *   - Oval (circular/elliptical shapes)
+ *   - Polygon (multi-sided shapes)
+ *   - Graphic (images, placed files)
  * 
  * @param {PageItem} pageItem - Page item to examine
- * @return {string} - Type identifier: "TextFrame", "Rectangle", "Graphic", or "Unknown"
+ * @return {string} - Type identifier or empty string if unsupported
  */
 function getPageItemType(pageItem) {
     if (!pageItem) {
-        return "Unknown";
+        return "";
     }
     
     try {
-        // Check for TextFrame
-        if (pageItem.constructor.name === "TextFrame") {
+        // Check for TextFrame using instanceof
+        if (pageItem instanceof TextFrame) {
             return "TextFrame";
         }
         
-        // Check for Rectangle (a regular shape)
-        if (pageItem.constructor.name === "Rectangle") {
+        // Check for Rectangle using instanceof
+        if (pageItem instanceof Rectangle) {
             return "Rectangle";
         }
         
-        // Check for Graphic (images, placed files)
-        if (pageItem.constructor.name === "Graphic") {
+        // Check for Oval using instanceof
+        if (pageItem instanceof Oval) {
+            return "Oval";
+        }
+        
+        // Check for Polygon using instanceof
+        if (pageItem instanceof Polygon) {
+            return "Polygon";
+        }
+        
+        // Check for Graphic using instanceof
+        if (pageItem instanceof Graphic) {
             return "Graphic";
         }
         
-        // Fallback: check itemLayer property
-        if (pageItem.hasOwnProperty("itemLayer")) {
-            if (pageItem.itemLayer.name === "TextFrame") {
-                return "TextFrame";
-            }
-        }
-        
-        return "Unknown";
+        // Unsupported type
+        return "";
     } catch (e) {
-        return "Unknown";
+        return "";
     }
 }
 
 /**
  * Reads the script label from a page item
- * Script labels are stored in page item's label property
+ * Returns empty string if label is not set (skipped in FrameMap)
  * 
  * @param {PageItem} pageItem - Page item to read label from
- * @return {string} - Script label, or empty string if not set
+ * @return {string} - Script label string, or empty string if not set
  */
 function readScriptLabel(pageItem) {
     if (!pageItem) {
@@ -141,8 +150,12 @@ function readScriptLabel(pageItem) {
     }
     
     try {
-        if (pageItem.hasOwnProperty("label") && pageItem.label) {
-            return String(pageItem.label);
+        if (pageItem.hasOwnProperty("label")) {
+            var labelValue = pageItem.label;
+            // Ensure it's a non-empty string
+            if (labelValue && typeof labelValue === "string" && labelValue.length > 0) {
+                return labelValue;
+            }
         }
     } catch (e) {
         // Label property not accessible
@@ -152,11 +165,64 @@ function readScriptLabel(pageItem) {
 }
 
 /**
- * Extracts bounds from a page item
- * Returns bounds in format [y1, x1, y2, x2]
+ * Gets the page name from a page object
+ * 
+ * @param {Page} page - Page object
+ * @return {string} - Page name or empty string if not available
+ */
+function getPageName(page) {
+    if (!page) {
+        return "";
+    }
+    
+    try {
+        if (page.hasOwnProperty("name")) {
+            var nameValue = page.name;
+            if (nameValue && typeof nameValue === "string" && nameValue.length > 0) {
+                return nameValue;
+            }
+        }
+    } catch (e) {
+        // Name not accessible
+    }
+    
+    return "";
+}
+
+/**
+ * Gets the layer name where a page item resides
+ * 
+ * @param {PageItem} pageItem - Page item to check
+ * @return {string} - Layer name or empty string if not available
+ */
+function getLayerName(pageItem) {
+    if (!pageItem) {
+        return "";
+    }
+    
+    try {
+        if (pageItem.hasOwnProperty("itemLayer")) {
+            var layer = pageItem.itemLayer;
+            if (layer && layer.hasOwnProperty("name")) {
+                var layerName = layer.name;
+                if (layerName && typeof layerName === "string" && layerName.length > 0) {
+                    return layerName;
+                }
+            }
+        }
+    } catch (e) {
+        // Layer not accessible
+    }
+    
+    return "";
+}
+
+/**
+ * Extracts geometric bounds from a page item
+ * Returns bounds in InDesign format [y1, x1, y2, x2]
  * 
  * @param {PageItem} pageItem - Page item to extract bounds from
- * @return {array} - Bounds array [y1, x1, y2, x2]
+ * @return {Array} - Bounds array [y1, x1, y2, x2]
  */
 function extractBounds(pageItem) {
     if (!pageItem || !pageItem.hasOwnProperty("geometricBounds")) {
@@ -177,39 +243,53 @@ function extractBounds(pageItem) {
 
 /**
  * Processes a single page item
- * Creates frame entry if item type matches detection criteria
- * Adds entry to global g_FrameMap array
+ * Creates frame entry only if:
+ *   1. Item type is one of the supported types
+ *   2. Item has a non-empty script label
+ * 
+ * Stores ACTUAL PageItem object reference in FrameMap
  * 
  * @param {PageItem} pageItem - Page item to process
- * @param {number} pageNumber - Page number (1-indexed)
+ * @param {Page} page - Parent page object
+ * @param {number} pageIndex - Zero-indexed page number
  * @return {void}
  */
-function processPageItem(pageItem, pageNumber) {
-    if (!pageItem) {
+function processPageItem(pageItem, page, pageIndex) {
+    if (!pageItem || !page) {
         return;
     }
     
-    // Detect item type
+    // Detect item type using instanceof
     var itemType = getPageItemType(pageItem);
     
-    // Only process recognized types
-    if (itemType === "Unknown") {
+    // Skip if unsupported type
+    if (itemType === "") {
         return;
     }
     
     // Read script label
     var label = readScriptLabel(pageItem);
     
-    // Extract bounds
-    var bounds = extractBounds(pageItem);
+    // Skip items with empty labels
+    if (label === "") {
+        return;
+    }
     
-    // Create frame entry
+    // Extract additional metadata
+    var bounds = extractBounds(pageItem);
+    var pageName = getPageName(page);
+    var layerName = getLayerName(pageItem);
+    
+    // Create frame entry with ACTUAL PageItem reference
     var frameEntry = {
-        label: label,
-        page: pageNumber,
-        bounds: bounds,
-        type: itemType,
-        id: g_FrameCounter
+        label: label,                           // Script label
+        object: pageItem,                       // ACTUAL InDesign PageItem reference
+        pageIndex: pageIndex,                   // Zero-indexed page number
+        pageName: pageName,                     // Page name from InDesign
+        type: itemType,                         // Type from instanceof check
+        bounds: bounds,                         // Geometric bounds
+        layer: layerName,                       // Layer name
+        id: g_FrameCounter                      // Unique frame ID
     };
     
     // Increment counter for next frame
@@ -221,14 +301,13 @@ function processPageItem(pageItem, pageNumber) {
 
 /**
  * Processes all page items on a single page
- * Iterates through all items and calls processPageItem()
- * Handles nested items in groups
+ * Iterates through all items using traditional for loop (ES3)
  * 
  * @param {Page} page - Page object to scan
- * @param {number} pageNumber - Page number (1-indexed)
+ * @param {number} pageIndex - Zero-indexed page number
  * @return {void}
  */
-function processPage(page, pageNumber) {
+function processPage(page, pageIndex) {
     if (!page || !page.hasOwnProperty("pageItems")) {
         return;
     }
@@ -240,17 +319,18 @@ function processPage(page, pageNumber) {
             return;
         }
         
-        // Iterate through all page items
+        // Iterate through all page items (ES3 compatible)
         for (var i = 0; i < pageItems.length; i++) {
             var pageItem = pageItems[i];
-            processPageItem(pageItem, pageNumber);
+            processPageItem(pageItem, page, pageIndex);
         }
     } catch (e) {
-        // Error processing page items
+        // Error processing page items - continue with next page
     }
 }
 
 /**
+ * Main scanner function
  * Scans all pages in the active document
  * Builds comprehensive FrameMap with all detected frames
  * Resets global FrameMap before scanning
@@ -262,18 +342,18 @@ function processPage(page, pageNumber) {
  *   4. For each page, processes all page items
  *   5. Returns complete FrameMap array
  * 
- * @return {array} - FrameMap array with all detected frames
+ * @return {Array} - FrameMap array with all detected frames and PageItem objects
  */
 function scanFrames() {
     // Step 1: Validate document
     if (!isDocumentOpen()) {
-        alert("Frame Scanner\n\nError: No active document open.");
+        alert("Frame Scanner Error\n\nNo active document open.\n\nPlease open an InDesign document and try again.");
         return [];
     }
     
     var doc = getActiveDocument();
     if (!doc) {
-        alert("Frame Scanner\n\nError: Cannot access active document.");
+        alert("Frame Scanner Error\n\nCannot access active document.\n\nPlease ensure the document is properly loaded.");
         return [];
     }
     
@@ -283,19 +363,22 @@ function scanFrames() {
     
     // Step 3: Validate pages exist
     if (!doc.hasOwnProperty("pages") || doc.pages.length === 0) {
-        alert("Frame Scanner\n\nError: Document contains no pages.");
+        alert("Frame Scanner Error\n\nDocument contains no pages.\n\nPlease ensure the document has at least one page.");
         return [];
     }
     
-    // Step 4: Iterate through pages
+    // Step 4: Iterate through pages (ES3 compatible)
     var pageCount = doc.pages.length;
     
     for (var pageIdx = 0; pageIdx < pageCount; pageIdx++) {
-        var page = doc.pages[pageIdx];
-        var pageNumber = pageIdx + 1;  // Convert to 1-indexed page number
-        
-        // Process all items on this page
-        processPage(page, pageNumber);
+        try {
+            var page = doc.pages[pageIdx];
+            
+            // Process all items on this page
+            processPage(page, pageIdx);
+        } catch (e) {
+            // Continue with next page on error
+        }
     }
     
     return g_FrameMap;
@@ -304,9 +387,10 @@ function scanFrames() {
 /**
  * Searches for a frame with exact label match
  * Returns first frame found with matching label
+ * Frame object contains ACTUAL PageItem reference
  * 
  * @param {string} label - Exact label to search for
- * @return {Object|null} - Frame object if found, null otherwise
+ * @return {Object|null} - Frame object with PageItem reference if found, null otherwise
  */
 function findFrame(label) {
     if (!label || label === "") {
@@ -318,7 +402,7 @@ function findFrame(label) {
         return null;
     }
     
-    // Search for matching label
+    // Search for matching label (ES3 compatible)
     for (var i = 0; i < g_FrameMap.length; i++) {
         var frame = g_FrameMap[i];
         
@@ -335,10 +419,11 @@ function findFrame(label) {
 /**
  * Searches for all frames with label starting with prefix
  * Returns array of all matching frames
- * Useful for finding related frames (e.g., all "header_" prefixed labels)
+ * Useful for finding related frames (e.g., all "HEADLINE_" prefixed labels)
+ * Each frame object contains ACTUAL PageItem reference
  * 
  * @param {string} prefix - Label prefix to search for
- * @return {array} - Array of matching frame objects
+ * @return {Array} - Array of matching frame objects with PageItem references
  */
 function findFrames(prefix) {
     if (!prefix || prefix === "") {
@@ -353,7 +438,7 @@ function findFrames(prefix) {
     var results = [];
     var prefixLength = prefix.length;
     
-    // Search for labels starting with prefix
+    // Search for labels starting with prefix (ES3 compatible)
     for (var i = 0; i < g_FrameMap.length; i++) {
         var frame = g_FrameMap[i];
         
@@ -362,6 +447,7 @@ function findFrames(prefix) {
             
             // Check if label starts with prefix
             if (frameLabel.length >= prefixLength) {
+                // Use substr for ES3 compatibility
                 var labelPrefix = frameLabel.substr(0, prefixLength);
                 
                 if (labelPrefix === prefix) {
@@ -374,16 +460,19 @@ function findFrames(prefix) {
     return results;
 }
 
-// ============================================================================
-// Public API Export
-// ============================================================================
-// The following functions are available for external use:
-// 
-// scanFrames()        - Scans document and builds FrameMap, returns array
-// findFrame(label)    - Finds single frame by exact label match
-// findFrames(prefix)  - Finds all frames with label starting with prefix
-// 
-// Internal global state (do not modify directly):
-// g_FrameMap          - Current FrameMap array (populated by scanFrames)
-// g_FrameCounter      - Frame ID counter
-// ============================================================================
+/**
+ * ============================================================================
+ * PUBLIC API EXPORT
+ * ============================================================================
+ * 
+ * Public Functions:
+ *   scanFrames()        - Scans document and builds FrameMap with PageItem objects
+ *   findFrame(label)    - Finds single frame by exact label match
+ *   findFrames(prefix)  - Finds all frames with label starting with prefix
+ * 
+ * Global State (internal):
+ *   g_FrameMap          - Current FrameMap array (populated by scanFrames)
+ *   g_FrameCounter      - Frame ID counter
+ * 
+ * ============================================================================
+ */
