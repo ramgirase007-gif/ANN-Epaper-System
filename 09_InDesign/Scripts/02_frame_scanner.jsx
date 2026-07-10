@@ -1,48 +1,47 @@
 /**
  * ANN Publisher v2.0 - Production Frame Scanner Module
- * Sprint 9 – Module 2 Rebuild
+ * Sprint 9 – Module 2 Production Build
  * 
  * Purpose:
  *   Comprehensive frame scanner for Adobe InDesign 2026.
  *   Scans all pages and returns ACTUAL InDesign PageItem object references.
  *   Detects TextFrame, Rectangle, Oval, Polygon, and Graphic objects.
  *   Reads script labels and builds a FrameMap with complete metadata.
- *   Provides query functions to locate frames by label or prefix.
+ *   Handles grouped items and nested structures.
  * 
  * Compatibility:
  *   - Adobe InDesign 2026
  *   - ExtendScript (ES3) only
- *   - No modern JavaScript (no forEach, Object.keys, JSON.parse, etc.)
+ *   - No modern JavaScript: no forEach, Object.keys, JSON.parse, Array.isArray
  * 
- * Core FrameMap Structure:
- *   Each FrameMap entry contains:
+ * Core Data Structure (FrameMap):
+ *   Each entry contains:
  *   {
  *       label: String,              // Script label from page item
- *       object: PageItem,           // ACTUAL InDesign PageItem reference
- *       pageIndex: Number,          // Zero-indexed page number
+ *       page: Number,               // Page number (1-indexed)
  *       pageName: String,           // Page name from InDesign
- *       type: String,               // "TextFrame", "Rectangle", "Oval", "Polygon", "Graphic"
  *       bounds: Array,              // [y1, x1, y2, x2] in points
+ *       type: String,               // Type: TextFrame, Rectangle, Oval, Polygon, Graphic
  *       layer: String,              // Layer name where item resides
- *       id: Number                  // Unique frame identifier
+ *       id: Number,                 // Unique frame identifier
+ *       object: PageItem            // ACTUAL InDesign PageItem reference
  *   }
+ * 
+ * Public API:
+ *   scanFrames()                    - Scan document and return FrameMap
+ *   findFrame(label)                - Find single frame by exact label
+ *   findFrames(prefix)              - Find all frames with label prefix
  * 
  * Usage:
  *   var frameMap = scanFrames();
  *   var logoFrame = findFrame("LOGO_1");
  *   var headlines = findFrames("HEADLINE_");
- * 
- * Detection Examples:
- *   - HEADLINE_1, HEADLINE_2, etc.
- *   - BODY_1, BODY_2, etc.
- *   - PHOTO_1, PHOTO_2, etc.
- *   - CAPTION_1, CAPTION_2, etc.
  */
 
 /**
  * Global FrameMap storage
  * Populated by scanFrames() function
- * Contains array of frame objects with all metadata and object references
+ * Contains array of frame objects with all metadata and PageItem references
  */
 var g_FrameMap = [];
 
@@ -139,7 +138,7 @@ function getPageItemType(pageItem) {
 
 /**
  * Reads the script label from a page item
- * Returns empty string if label is not set (skipped in FrameMap)
+ * Returns empty string if label is not set (item is skipped)
  * 
  * @param {PageItem} pageItem - Page item to read label from
  * @return {string} - Script label string, or empty string if not set
@@ -283,13 +282,13 @@ function processPageItem(pageItem, page, pageIndex) {
     // Create frame entry with ACTUAL PageItem reference
     var frameEntry = {
         label: label,                           // Script label
-        object: pageItem,                       // ACTUAL InDesign PageItem reference
-        pageIndex: pageIndex,                   // Zero-indexed page number
+        page: pageIndex + 1,                    // 1-indexed page number
         pageName: pageName,                     // Page name from InDesign
-        type: itemType,                         // Type from instanceof check
         bounds: bounds,                         // Geometric bounds
+        type: itemType,                         // Type from instanceof check
         layer: layerName,                       // Layer name
-        id: g_FrameCounter                      // Unique frame ID
+        id: g_FrameCounter,                     // Unique frame ID
+        object: pageItem                        // ACTUAL InDesign PageItem reference
     };
     
     // Increment counter for next frame
@@ -300,8 +299,61 @@ function processPageItem(pageItem, page, pageIndex) {
 }
 
 /**
+ * Recursively processes items within a group
+ * Handles nested grouped items
+ * 
+ * @param {Group} groupItem - Group object containing items
+ * @param {Page} page - Parent page object
+ * @param {number} pageIndex - Zero-indexed page number
+ * @return {void}
+ */
+function processGroupItems(groupItem, page, pageIndex) {
+    if (!groupItem || !page) {
+        return;
+    }
+    
+    try {
+        if (!groupItem.hasOwnProperty("pageItems")) {
+            return;
+        }
+        
+        var pageItems = groupItem.pageItems;
+        
+        if (!pageItems) {
+            return;
+        }
+        
+        // Iterate through all items in group (ES3 compatible)
+        for (var i = 0; i < pageItems.length; i++) {
+            var pageItem = pageItems[i];
+            
+            if (!pageItem) {
+                continue;
+            }
+            
+            // Check if this is a group
+            try {
+                if (pageItem instanceof Group) {
+                    // Recursively process nested groups
+                    processGroupItems(pageItem, page, pageIndex);
+                    continue;
+                }
+            } catch (e) {
+                // Not a group, process as normal item
+            }
+            
+            // Process the item
+            processPageItem(pageItem, page, pageIndex);
+        }
+    } catch (e) {
+        // Error processing group items - continue
+    }
+}
+
+/**
  * Processes all page items on a single page
  * Iterates through all items using traditional for loop (ES3)
+ * Handles both top-level items and grouped items
  * 
  * @param {Page} page - Page object to scan
  * @param {number} pageIndex - Zero-indexed page number
@@ -322,6 +374,23 @@ function processPage(page, pageIndex) {
         // Iterate through all page items (ES3 compatible)
         for (var i = 0; i < pageItems.length; i++) {
             var pageItem = pageItems[i];
+            
+            if (!pageItem) {
+                continue;
+            }
+            
+            // Check if this is a group
+            try {
+                if (pageItem instanceof Group) {
+                    // Process items within the group
+                    processGroupItems(pageItem, page, pageIndex);
+                    continue;
+                }
+            } catch (e) {
+                // Not a group, process as normal item
+            }
+            
+            // Process the item
             processPageItem(pageItem, page, pageIndex);
         }
     } catch (e) {
@@ -339,7 +408,7 @@ function processPage(page, pageIndex) {
  *   1. Validates document is open
  *   2. Resets FrameMap and counter
  *   3. Iterates through all pages
- *   4. For each page, processes all page items
+ *   4. For each page, processes all page items (including grouped items)
  *   5. Returns complete FrameMap array
  * 
  * @return {Array} - FrameMap array with all detected frames and PageItem objects
@@ -466,9 +535,9 @@ function findFrames(prefix) {
  * ============================================================================
  * 
  * Public Functions:
- *   scanFrames()        - Scans document and builds FrameMap with PageItem objects
- *   findFrame(label)    - Finds single frame by exact label match
- *   findFrames(prefix)  - Finds all frames with label starting with prefix
+ *   scanFrames()        - Scan document and build FrameMap with PageItem objects
+ *   findFrame(label)    - Find single frame by exact label match
+ *   findFrames(prefix)  - Find all frames with label starting with prefix
  * 
  * Global State (internal):
  *   g_FrameMap          - Current FrameMap array (populated by scanFrames)
